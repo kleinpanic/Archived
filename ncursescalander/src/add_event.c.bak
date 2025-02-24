@@ -1,0 +1,225 @@
+#include "add_event.h"
+#include "repeat_tui.h"
+#include <ncurses.h>
+#include <string.h>
+#include <stdlib.h>
+#include <ctype.h>
+
+#define MAX_TITLE_LEN 50
+#define MAX_CALENDAR_LEN 30
+#define MAX_NOTES_LEN 256
+#define MAX_DATE_LEN 50
+
+typedef struct {
+    char title[MAX_TITLE_LEN];
+    bool all_day;
+    char start_date[MAX_DATE_LEN];
+    char end_date[MAX_DATE_LEN];
+    int start_hour, start_minute;
+    int end_hour, end_minute;
+    int repeat_option;
+    char calendar[MAX_CALENDAR_LEN];
+    char notes[MAX_NOTES_LEN];
+} Event;
+
+Event *create_event() {
+    Event *event = (Event *)malloc(sizeof(Event));
+    if (event) {
+        memset(event, 0, sizeof(Event));
+        strcpy(event->start_date, "01/01/2000");
+        strcpy(event->end_date, "01/01/2000");
+        event->start_hour = 9;
+        event->start_minute = 0;
+        event->end_hour = 10;
+        event->end_minute = 0;
+        event->repeat_option = 0;
+    }
+    return event;
+}
+
+void save_event(Event *event) {
+    FILE *file = fopen("events.txt", "a");
+    if (file) {
+        fprintf(file, "Title: %s\nAll Day: %d\nStart Date: %s\nEnd Date: %s\nStart: %02d:%02d\nEnd: %02d:%02d\nRepeat: %d\nCalendar: %s\nNotes: %s\n\n",
+                event->title, event->all_day, event->start_date, event->end_date, event->start_hour, event->start_minute,
+                event->end_hour, event->end_minute, event->repeat_option, event->calendar, event->notes);
+        fclose(file);
+    } else {
+        mvprintw(23, 0, "Error saving event!"); // Error message
+        refresh();
+        getch();  // Pause to let the user see the error
+    }
+}
+
+void open_add_event_tui() {
+    Event *event = create_event();
+    int ch;
+    int cursor_pos = 0;
+    bool exit = false;
+
+    while (!exit) {
+        clear();
+        mvprintw(0, 0, "Add New Event");
+
+        // Title input
+        mvprintw(2, 0, "Title: ");
+        if (cursor_pos == 0) attron(A_REVERSE);
+        mvprintw(2, 7, event->title);
+        if (cursor_pos == 0) attroff(A_REVERSE);
+
+        // All-day toggle
+        mvprintw(4, 0, "All Day: ");
+        if (cursor_pos == 1) attron(A_REVERSE);
+        mvprintw(4, 9, event->all_day ? "[X]" : "[ ]");
+        if (cursor_pos == 1) attroff(A_REVERSE);
+
+        // Start date input
+        mvprintw(6, 0, "Start Date: ");
+        if (cursor_pos == 2) attron(A_REVERSE);
+        mvprintw(6, 12, event->start_date);
+        if (cursor_pos == 2) attroff(A_REVERSE);
+
+        // End date input
+        mvprintw(8, 0, "End Date: ");
+        if (cursor_pos == 3) attron(A_REVERSE);
+        mvprintw(8, 10, event->end_date);
+        if (cursor_pos == 3) attroff(A_REVERSE);
+
+        // Start time input
+        mvprintw(10, 0, "Start Time: ");
+        if (cursor_pos == 4) attron(A_REVERSE);
+        mvprintw(10, 12, "%02d:%02d", event->start_hour, event->start_minute);
+        if (cursor_pos == 4) attroff(A_REVERSE);
+
+        // End time input
+        mvprintw(12, 0, "End Time: ");
+        if (cursor_pos == 5) attron(A_REVERSE);
+        mvprintw(12, 10, "%02d:%02d", event->end_hour, event->end_minute);
+        if (cursor_pos == 5) attroff(A_REVERSE);
+
+        // Repeat options
+        mvprintw(14, 0, "Repeat: ");
+        if (cursor_pos == 6) attron(A_REVERSE);
+        mvprintw(14, 8, "Choose..."); // Display the repeat choice interactively
+        if (cursor_pos == 6) attroff(A_REVERSE);
+
+        // Calendar name input
+        mvprintw(16, 0, "Calendar: ");
+        if (cursor_pos == 7) attron(A_REVERSE);
+        mvprintw(16, 10, event->calendar);
+        if (cursor_pos == 7) attroff(A_REVERSE);
+
+        // Notes input
+        mvprintw(18, 0, "Notes: ");
+        if (cursor_pos == 8) attron(A_REVERSE);
+        mvprintw(19, 0, event->notes);
+        if (cursor_pos == 8) attroff(A_REVERSE);
+
+        // Instructions
+        mvprintw(21, 0, "Esc: Cancel  Ctrl+S: Save");
+
+        refresh();
+
+        ch = getch();
+        switch (ch) {
+            case 27:  // ESC to cancel
+                exit = true;
+                break;
+            case 19:  // Ctrl+S to save (^S)
+                save_event(event);
+                exit = true;  // Return to calendar view after saving
+                break;
+            case KEY_DOWN:  // Navigate down
+                cursor_pos = (cursor_pos + 1) % 9;
+                break;
+            case KEY_UP:  // Navigate up
+                cursor_pos = (cursor_pos - 1 + 9) % 9;
+                break;
+            case KEY_LEFT:
+            case 'j':  // Decrease minute
+                if (cursor_pos == 4) {
+                    event->start_minute = (event->start_minute > 0) ? event->start_minute - 1 : 59;
+                } else if (cursor_pos == 5) {
+                    event->end_minute = (event->end_minute > 0) ? event->end_minute - 1 : 59;
+                }
+                break;
+            case KEY_RIGHT:
+            case 'k':  // Increase minute
+                if (cursor_pos == 4) {
+                    event->start_minute = (event->start_minute < 59) ? event->start_minute + 1 : 0;
+                } else if (cursor_pos == 5) {
+                    event->end_minute = (event->end_minute < 59) ? event->end_minute + 1 : 0;
+                }
+                break;
+            case KEY_SLEFT:
+            case 'h':  // Decrease hour (Shift+Left or 'h')
+                if (cursor_pos == 4) {
+                    event->start_hour = (event->start_hour > 0) ? event->start_hour - 1 : 23;
+                } else if (cursor_pos == 5) {
+                    event->end_hour = (event->end_hour > 0) ? event->end_hour - 1 : 23;
+                }
+                break;
+            case KEY_SRIGHT:
+            case 'l':  // Increase hour (Shift+Right or 'l')
+                if (cursor_pos == 4) {
+                    event->start_hour = (event->start_hour < 23) ? event->start_hour + 1 : 0;
+                } else if (cursor_pos == 5) {
+                    event->end_hour = (event->end_hour < 23) ? event->end_hour + 1 : 0;
+                }
+                break;
+            case ' ':
+            case '\n':
+                if (cursor_pos == 1) {
+                    event->all_day = !event->all_day;
+                } else if (cursor_pos == 6) {
+                    open_repeat_tui();  // Placeholder for opening the repeat TUI
+                }
+                break;
+            default:
+                if (cursor_pos == 0 && ch != KEY_DOWN && ch != KEY_UP) {
+                    int len = strlen(event->title);
+                    if ((ch == KEY_BACKSPACE || ch == 127) && len > 0) {
+                        event->title[len - 1] = '\0';
+                    } else if (isprint(ch) && len < MAX_TITLE_LEN - 1) {
+                        event->title[len] = ch;
+                        event->title[len + 1] = '\0';
+                    }
+                } else if (cursor_pos == 2 && ch != KEY_DOWN && ch != KEY_UP) {
+                    int len = strlen(event->start_date);
+                    if ((ch == KEY_BACKSPACE || ch == 127) && len > 0) {
+                        event->start_date[len - 1] = '\0';
+                    } else if (isprint(ch) && len < MAX_DATE_LEN - 1) {
+                        event->start_date[len] = ch;
+                        event->start_date[len + 1] = '\0';
+                    }
+                } else if (cursor_pos == 3 && ch != KEY_DOWN && ch != KEY_UP) {
+                    int len = strlen(event->end_date);
+                    if ((ch == KEY_BACKSPACE || ch == 127) && len > 0) {
+                        event->end_date[len - 1] = '\0';
+                    } else if (isprint(ch) && len < MAX_DATE_LEN - 1) {
+                        event->end_date[len] = ch;
+                        event->end_date[len + 1] = '\0';
+                    }
+                } else if (cursor_pos == 7 && ch != KEY_DOWN && ch != KEY_UP) {
+                    int len = strlen(event->calendar);
+                    if ((ch == KEY_BACKSPACE || ch == 127) && len > 0) {
+                        event->calendar[len - 1] = '\0';
+                    } else if (isprint(ch) && len < MAX_CALENDAR_LEN - 1) {
+                        event->calendar[len] = ch;
+                        event->calendar[len + 1] = '\0';
+                    }
+                } else if (cursor_pos == 8 && ch != KEY_DOWN && ch != KEY_UP) {
+                    int len = strlen(event->notes);
+                    if ((ch == KEY_BACKSPACE || ch == 127) && len > 0) {
+                        event->notes[len - 1] = '\0';
+                    } else if (isprint(ch) && len < MAX_NOTES_LEN - 1) {
+                        event->notes[len] = ch;
+                        event->notes[len + 1] = '\0';
+                    }
+                }
+                break;
+        }
+    }
+
+    free(event);  // Free the allocated memory
+}
