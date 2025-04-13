@@ -17,28 +17,6 @@ While these projects are no longer in active development, they might still serve
 
 ---
 
-### 📁 **Repository Structure**
-
-Each archived project is stored in its own directory and includes any relevant files from the original repository. Here's a general breakdown:
-
-```
-/Archived
-│
-├── Project-1/
-│   ├── README.md
-│   ├── src/
-│   └── ...
-│
-├── Project-2/
-│   ├── docs/
-│   └── ...
-│
-└── Project-N/
-    ├── ...
-```
-
----
-
 ### ⚠️ **Disclaimer**
 - These projects are **archived** and are not maintained.
 - There may be bugs, incomplete features, or outdated dependencies.
