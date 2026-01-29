@@ -1,0 +1,14 @@
+set editing-mode vi
+
+$if mode=vi
+
+    set colored-completion-prefix on
+    set show-mode-in-prompt on
+     
+    set keymap vi-command
+        Control-l: clear-display
+
+    set keymap vi-insert
+        Control-l: clear-display
+
+$endif

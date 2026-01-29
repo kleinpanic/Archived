@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Brotherhood Portal – Zeta Psi Alpha Pi</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    /* Specific styles for the members portal */
+    body { display: flex; min-height: 100vh; margin: 0; }
+    nav#sidebar { width: 200px; background: #333; color: #fff; flex-shrink: 0; }
+    nav#sidebar ul { list-style: none; padding: 0; margin: 0; }
+    nav#sidebar li { border-bottom: 1px solid #444; }
+    nav#sidebar a { color: #fff; text-decoration: none; display: block; padding: 1em; }
+    nav#sidebar a:hover { background: #444; }
+    main#content { flex: 1; padding: 1em; }
+    .section { margin-bottom: 2em; }
+    .section h3 { border-bottom: 2px solid #EAAA00; color: #EAAA00; }
+    table { width: 100%; border-collapse: collapse; margin-top: 0.5em; }
+    table, th, td { border: 1px solid #ccc; }
+    th, td { padding: 0.5em; text-align: left; }
+  </style>
+</head>
+<body>
+  <!-- Sidebar navigation for portal sections -->
+  <nav id="sidebar">
+    <ul>
+      <li><a href="#" onclick="showSection('dashboard')">Dashboard</a></li>
+      <li><a href="#" onclick="showSection('events')">Events Calendar</a></li>
+      <li><a href="#" onclick="showSection('finances')">My Finances</a></li>
+      <li><a href="#" onclick="showSection('documents')">Documents</a></li>
+      <li><a href="#" onclick="logout()">Logout</a></li>
+    </ul>
+  </nav>
+
+  <!-- Main content area with different sections that are shown/hidden dynamically -->
+  <main id="content">
+    <section id="dashboard" class="section">
+      <h3>Dashboard</h3>
+      <p>Welcome, <span id="welcomeName">Brother</span>!</p>
+      <p>Upcoming event: <span id="nextEvent">Loading...</span></p>
+    </section>
+    <section id="events" class="section" style="display:none;">
+      <h3>Events Calendar</h3>
+      <div id="eventsList">Loading events...</div>
+    </section>
+    <section id="finances" class="section" style="display:none;">
+      <h3>My Finances</h3>
+      <div id="financeStatus">Loading financial info...</div>
+    </section>
+    <section id="documents" class="section" style="display:none;">
+      <h3>Documents</h3>
+      <ul id="docList">Loading documents...</ul>
+    </section>
+  </main>
+
+  <!-- Include the portal script -->
+  <script src="../js/portal.js"></script>
+</body>
+</html>
+

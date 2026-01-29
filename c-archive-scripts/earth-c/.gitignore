@@ -1,0 +1,39 @@
+# Build artifacts
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+earth
+earth-*
+
+# Editor/IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Output
+frames/
+output/
+*.ppm
+*.png
+*.gif
+
+# Build directories
+build/
+dist/
+obj/
+
+# Debug
+*.dSYM/
+vgcore.*
+core
+
+# Profiling
+*.prof
+gmon.out
+perf.data*
+callgrind.out.*

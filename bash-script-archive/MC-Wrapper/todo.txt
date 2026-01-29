@@ -1,0 +1,992 @@
+Below are several ideas—both practical and fun—that you can implement entirely in your wrapper (no Bukkit/Spigot/Paper plugin required). Since you already parse chat, detect joins/leaves, and issue RCON/FIFO commands, you can layer on custom “server-managed” commands by:
+
+1. Watching for specific chat triggers (e.g. a player typing `server sethome`),
+2. Storing whatever data you need (in flat files or JSON), and
+3. Issuing one or more vanilla `/give`, `/tp`, `/scoreboard`, etc., commands back to the server via your existing `rcon_send` function.
+
+Below are grouped suggestions. Pick and choose whichever resonate; all can be shoe-horned into your current script structure without losing any existing functionality.
+
+---
+
+## 1. Player “Home” and Warp System
+
+**Goal**: Let each player define one or more personal homes, then teleport back to them at will.
+**How to implement**:
+
+1. **Command syntax**
+
+   * `/server sethome [name]` → Records the player’s current location (X, Y, Z) under a key like `homes.json[player][name]`.
+   * `/server home [name]` → Looks up `homes.json[player][name]` and issues `tp <player> X Y Z`.
+   * `/server delhome [name]` → Removes that entry from `homes.json`.
+
+2. **Data storage**
+
+   * Keep a JSON file (e.g. `homes.json`) that looks like:
+
+     ```json
+     {
+       "Notch": {
+         "bed": [100, 64, 200],
+         "tower": [300, 85, -150]
+       },
+       "jeb_": {
+         "spawn": [0, 70, 0]
+       }
+     }
+     ```
+   * In your `process_output()` function, detect the `/server sethome name` chat line for player “P”:
+
+     1. Save the name in a temporary variable (e.g. `SETHOME_REQ="$user:$name"`).
+     2. Immediately send `data get entity <user> Pos`, which will force the server to print something like:
+
+        ```
+        Notch has the following entity data: [100.0d,64.0d,200.0d]
+        ```
+     3. On the next line, your existing “Add-spot” pattern will catch that. Instead of writing to `locations.json`, write into `homes.json` under the correct key.
+   * For `/server home name`, you reverse it: read `homes.json["Notch"]["name"] → [X,Y,Z]`, then do `rcon_send "tp Notch X Y Z"`.
+
+3. **Edge cases & permission**
+
+   * You can choose to let everyone have up to, say, **3** homes. Store the limit in a config (`DEFAULT_MAX_HOMES=3`). Reject extra homes with a chat message:
+
+     ```
+     rcon_send "say You’ve already set the maximum (3) homes."
+     ```
+   * If a requested name doesn’t exist, reply:
+
+     ```
+     rcon_send "say Home '$name' not found. Use /server sethome $name first."
+     ```
+
+4. **Home list**
+
+   * If a player types `/server listhomes`, read all keys under `homes.json[$player]` and do something like:
+
+     ```
+     rcon_send "tell <$player> Your homes: ${names[*]}"
+     ```
+
+---
+
+## 2. Warp Points / Public Teleports
+
+**Goal**: Let any player (or only privileged players) define global warp points by name.
+**How to implement**:
+
+1. **Command syntax**
+
+   * `/server addwarp [warpname]` → Similar to `addspot` logic: store the coordinate under `warps.json[warpname]`.
+   * `/server warp [warpname]` → Reads `warps.json[warpname]` and does `tp <player> X Y Z`.
+   * `/server delwarp [warpname]` → Removes that key from `warps.json`.
+
+2. **Data storage**
+
+   * A simple JSON or even a text file `warps.json`:
+
+     ```json
+     {
+       "market": [120, 65, 220],
+       "event_stage": [0, 70, 0]
+     }
+     ```
+   * Use `jq` if available, otherwise `sed` (exactly like your `LOC_JSON` logic).
+
+3. **Permissions**
+
+   * Only let L1 or L2 users create/delete warps; L3 can only teleport to existing ones.
+   * In `process_output()`, when you catch `cmd=="addwarp name"` and if `$lvl <= 2` and `$prefix`, run the “get entity data → store” flow.
+
+4. **Listing Warps**
+
+   * `/server listwarps` prints all keys in `warps.json`.
+   * You can limit the output length (e.g. 8 warps per chat line) by chunking the array.
+
+---
+
+## 3. Teleport Requests (TPA / TPACCEPT)
+
+**Goal**: Emulate a “player‐to‐player teleport request” system so that players don’t have to rely on external plugins.
+**How to implement**:
+
+1. **Command syntax**
+
+   * `/server tpa <targetPlayer>` → Saves in a temporary in‐memory file or JSON array: `"pending_tpa_requests": [ {"from":"P1","to":"P2","ts":<timestamp>} ]`.
+   * `/server tpaccept` → If there’s a pending request where `to == $player`, teleport both players together.
+   * `/server tpdeny` → Remove the pending request and tell both parties.
+
+2. **Flow**
+
+   1. In `process_output()`, detect `cmd=="tpa X"` for user “P”:
+
+      * If `lvl>=3` (all players can do it), check if `X` is online (you can maintain a small in‐memory array of `ONLINE_PLAYERS` updated on join/leave).
+      * Append `{"from":"P","to":"X","ts":<now>}` to a file like `tpa_requests.json`.
+      * `rcon_send "tell X: $P has requested to teleport to you. Type /server tpaccept or /server tpdeny."`
+      * `rcon_send "tell P: TP request sent to $X."`
+   2. When `tpaccept` arrives (captured in `process_output()`), look for a matching request in `tpa_requests.json`. If found and not expired (say, older than 60 seconds), do:
+
+      * `rcon_send "say Teleporting $from → $to"`
+      * `rcon_send "tp $from $to"`
+      * Remove that entry from the file and notify both.
+   3. If `tpdeny`, do the same but just `say “$to denied $from’s request.”`
+
+3. **Expiration & Cleanup**
+
+   * In every main loop iteration (or every few minutes), prune any request older than 2 minutes.
+
+---
+
+## 4. Economy Lite (Balance, Pay, Shop)
+
+**Goal**: Build a simple “currency” so players can earn and spend coins without a full plugin.
+**How to implement**:
+
+1. **Data storage**
+
+   * `economy.json` (or CSV) keyed by player, e.g.
+
+     ```json
+     {
+       "Notch": 1200,
+       "jeb_": 450
+     }
+     ```
+
+2. **Commands**
+
+   * `/server balance` → Reads `economy.json[$player]` and says:
+
+     ```
+     rcon_send "tell $player Your balance: $X coins."
+     ```
+   * `/server pay <target> <amount>` →
+
+     1. Validate sender has ≥ amount.
+     2. Deduct from `economy.json[sender]`, add to `economy.json[target]`.
+     3. `rcon_send "tell $sender Paid $amount to $target. Your new balance: $newbal."`
+     4. If `$target` is online: `rcon_send "tell $target You received $amount coins from $sender."`
+     5. If `$target` is offline: store a “pending notification” in a separate file so you can remind them on next login.
+
+3. **Shop System**
+
+   * Maintain a fixed “shop catalog” in a simple JSON file, e.g.
+
+     ```json
+     {
+       "wooden_sword": { "price": 100, "give_cmd": "give {player} minecraft:wooden_sword 1" },
+       "diamond": { "price": 500, "give_cmd": "give {player} minecraft:diamond 1" }
+     }
+     ```
+   * `/server buy <item>`:
+
+     1. Check if `economy.json[$player] ≥ price`.
+     2. Deduct price, run `rcon_send "(that item’s give_cmd with {player} replaced)"`.
+     3. Announce success/failure.
+
+4. **Earning Currency**
+
+   * You can give coins on join, e.g. first join of the day:
+
+     * On join, check a file `last_daily_claim.json[player]`; if date ≠ today, add 50 coins and update to today.
+     * Or every time someone breaks a block (not super reliable w/o a plugin), but you can approximate “minutes online” → add 10 coins every 30 minutes. Simply check `$ONLINE_PLAYERS` and run a cron-like loop in the wrapper every 30m.
+
+---
+
+## 5. Automatic Announcements & Mini Events
+
+**Goal**: Keep your community engaged by scheduling server-wide announcements or running small server‐side events (storm, mob spawn, etc.)
+**How to implement**:
+
+1. **Scheduled Messages**
+
+   * In your wrapper’s main loop, add a timestamp check (e.g. every minute) against a separate “announcements.json” file that has entries like:
+
+     ```json
+     [
+       { "time": "14:00", "message": "Don’t forget: PvP tournament at 8 PM!" },
+       { "time": "18:00", "message": "Golden apple drop in 10 minutes!" }
+     ]
+     ```
+   * If current local time matches any `"time"`, run:
+
+     ```
+     rcon_send "say 🔔 ${message}"
+     ```
+   * Once fired, mark it as “done” (add a field `"fired_today": true`) so it only goes off once/day, then reset all `fired_today` flags at midnight.
+
+2. **Random Mob Raids / Weather Events**
+
+   * Every hour (or random interval), trigger a “raid event.” Example:
+
+     ```bash
+     if (( RANDOM % 100 < 10 )); then
+       # 10% chance each hour
+       rcon_send "say ⚔️ Mob raid incoming! Protect the village!"
+       rcon_send "summon zombie 0 64 0"
+       rcon_send "summon skeleton 0 64 2"
+       # etc.
+     fi
+     ```
+   * You can spawn a cluster of zombies near spawn or near a particular billboard, making it feel like a “community event.”
+
+3. **Server-wide Weather Control**
+
+   * Implement `/server weather <clear|rain|thunder> [duration]` in chat. For example, if someone types `/server weather thunder 300` (five minutes):
+
+     1. Immediately `rcon_send "weather thunder"`.
+     2. In the wrapper, `sleep <duration>` then do `rcon_send "weather clear"`.
+   * This is handy if you want to schedule “storm parties” or seasonal events (snow/rain on a certain day).
+
+---
+
+## 6. Whitelist & Permissions Manager
+
+**Goal**: Let you manage a dynamic whitelist (or temporary bans) without manually editing `white-list.json` or using the console.
+**How to implement**:
+
+1. **Command syntax**
+
+   * `/server whitelist add <player>` → Appends `<player>` to `white-list.json` and runs `rcon_send "whitelist add <player>"`.
+   * `/server whitelist remove <player>` → Same but `whitelist remove <player>"`.
+   * `/server whitelist list` → Reads `white-list.json` and DMs or `tell` the caller all current whitelisted players.
+
+2. **Temporary Bans**
+
+   * You already have `ban`, `ban-ip`, etc. But you could introduce a “tempban” command:
+
+     ```bash
+     cmd=="tempban" && lvl==1
+     ```
+
+     * Syntax: `/server tempban <player> <minutes>`
+     * On receipt, run `rcon_send "ban <player>"`, and in the wrapper, do
+
+       ```bash
+       echo '{"player":"Notch","until":<future-timestamp>}' >> tempbans.json
+       ```
+     * In a periodic check (every minute), look for any entry whose “until” ≤ now; if so, do `rcon_send "pardon Notch"` and remove from `tempbans.json`.
+
+3. **Easy Operators/Deops**
+
+   * Besides the existing `op/deop` commands, you can have:
+
+     * `/server promote <player>` → `rcon_send "op <player>"` + log in `ops.json` (timestamp, reason).
+     * `/server demote <player>` → `rcon_send "deop <player>"`.
+
+---
+
+## 7. In‐Game Chat Moderation / Mute System
+
+**Goal**: Allow staff to mute troublemakers (preventing them from sending chat messages) without needing a plugin.
+**How to implement**:
+
+1. **Mute storage**
+
+   * A file `muted.json`:
+
+     ```json
+     {
+       "Notch": { "until": <timestamp>, "reason": "spamming" },
+       "jeb_": { "until": 0, "reason": "permanent" }
+     }
+     ```
+
+2. **Command syntax**
+
+   * `/server mute <player> [minutes] [reason]` → If `lvl==1`, add an entry to `muted.json`. If `[minutes]` is absent, treat as permanent.
+   * `/server unmute <player>` → Remove them from `muted.json`.
+
+3. **Enforce**
+
+   * In `process_output()`, whenever you parse a chat line (`<user> <msg>`), check if `user` is in `muted.json` and if `now < until` (or `until == 0`). If so, immediately do:
+
+     ```
+     rcon_send "tell $user You are muted. Reason: <$reason>"
+     ```
+
+     and do **not** re-log that chat message to the server (i.e. swallow it).
+   * This effectively prevents the user from ever seeing their text broadcasted.
+
+---
+
+## 8. “Mail” System (Offline Messages)
+
+**Goal**: Let players leave offline “mail” for each other.
+**How to implement**:
+
+1. **Data storage**
+
+   * `mailbox.json`, keyed by recipient:
+
+     ```json
+     {
+       "Notch": [
+         { "from":"jeb_","message":"gg on the raid!","ts":<timestamp> }
+       ],
+       "jeb_": []
+     }
+     ```
+
+2. **Command syntax**
+
+   * `/server mail send <target> <message>` → Append `{"from":"$player","message":"…","ts":…}` to `mailbox.json[$target]`. Also immediately do:
+
+     * If `$target` is online:
+
+       ```
+       rcon_send "tell $target You have new mail from $player. Type /server mail read."
+       ```
+     * Tell `$player`: “Mail sent to \$target”.
+   * `/server mail read` → Read all entries in `mailbox.json[$player]`. For each message, do:
+
+     ```
+     rcon_send "tell $player [$from @ YYYY-MM-DD HH:MM] $message"
+     ```
+
+     Then clear `mailbox.json[$player]`.
+
+3. **Edge cases**
+
+   * If `$target` doesn’t exist or has never joined before, you can create the JSON key on-the-fly.
+   * Limit mailbox to, say, 10 messages per user. If over quota, tell the sender:
+
+     ```
+     rcon_send "tell $player $target’s mailbox is full (10 messages)."
+     ```
+
+---
+
+## 9. “Staff Report” / Moderation Alerts
+
+**Goal**: Let players privately report misbehavior or issues, which emails or DMs the admins in real time.
+**How to implement**:
+
+1. **Command syntax**
+
+   * `/server report <issue description>` → Send a server‐side DM to all L1 and L2 operators (loop through your `PRIV` array, looking for level ≤ 2) with:
+
+     ```
+     rcon_send "tell $staffmember [REPORT] $player says: $description"
+     ```
+   * Also append to a `reports.log` with timestamp, reporter, and text.
+
+2. **Acknowledgment**
+
+   * Immediately do:
+
+     ```
+     rcon_send "tell $player Thank you for your report. A staff member will review it shortly."
+     ```
+
+---
+
+## 10. “Kit” System (Starter Kits, Weekly Kits, etc.)
+
+**Goal**: Give each player a controlled set of items once per day, week, or on first join.
+**How to implement**:
+
+1. **Data storage**
+
+   * `kits.json`, e.g.:
+
+     ```json
+     {
+       "new_player": [ "give {player} minecraft:stone_pickaxe 1", "give {player} minecraft:bread 16" ],
+       "daily": [ "give {player} minecraft:iron_ingot 5" ],
+       "weekly": [ "give {player} minecraft:diamond 1", "give {player} minecraft:gold_ingot 10" ]
+     }
+     ```
+   * `last_kit_claim.json`:
+
+     ```json
+     {
+       "Notch": { "daily": "2025-06-01", "weekly": "2025-05-28" },
+       "jeb_": { … }
+     }
+     ```
+
+2. **On First Join**
+
+   * In your “JOIN” block, if `! has key last_kit_claim[$player].new_player`, immediately run:
+
+     ```
+     for cmd in kits.json.new_player; do
+       rcon_send "${cmd//\{player\}/$player}"
+     done
+     ```
+
+     Set `last_kit_claim[$player].new_player = today`.
+     Announce:
+
+     ```
+     rcon_send "tell $player Welcome! You have received your starter kit."
+     ```
+
+3. **Daily / Weekly**
+
+   * Add `/server kit daily` →
+
+     1. Check `last_kit_claim[$player].daily`. If `< today`, run all `"daily"` commands, update `last_kit_claim[$player].daily = today`, and tell them “Daily kit claimed.” If already claimed, “You’ve already claimed your daily kit on \$date.”
+   * Similarly for `/server kit weekly`.
+
+---
+
+## 11. Simple Lottery / Raffle
+
+**Goal**: Let players buy “tickets” with your in‐wrapper economy, then pick a random winner at a scheduled time.
+**How to implement**:
+
+1. **Data storage**
+
+   * `lottery.json`:
+
+     ```json
+     {
+       "entries": [ "Notch", "Notch", "jeb_" ],
+       "ticket_price": 50,
+       "draw_time": "2025-06-07T20:00:00"
+     }
+     ```
+
+2. **Command syntax**
+
+   * `/server lottery buy <n>` → Check if `economy.json[$player] ≥ n * ticket_price`. If yes, deduct and append `$player` to `entries` n times, then reply “You bought n tickets.” Otherwise “Not enough coins.”
+   * `/server lottery status` → “Entries so far: \${#entries\[@]}, next draw at \${draw\_time}.”
+   * In your main loop, if current timestamp ≥ `draw_time`, do:
+
+     ```bash
+     winner=${entries[RANDOM % ${#entries[@]}]}
+     rcon_send "say 🎉 Congratulations $winner — you won the lottery! 🎉"
+     # Award a prize, e.g.:
+     rcon_send "give $winner minecraft:diamond 5"
+     # Reset:
+     lottery.json.entries = []
+     draw_time = next-week (use date -d '+7 days' --iso-8601=minutes)
+     ```
+   * Write changes back to `lottery.json`.
+
+---
+
+## 12. “AFK Kick” / Idle Checker
+
+**Goal**: Automatically kick players who are idle/moving < a threshold for a long time.
+**Limitation**: Vanilla Minecraft doesn’t expose “idle time” directly. But you can approximate via “console messages” or by occasionally running `/data get entity <player> Pos` and comparing their coordinates over time.
+**How to implement**:
+
+1. **Approach** (polling):
+
+   * Keep a JSON `last_move.json` with each player’s last known coordinates and timestamp.
+   * Every, say, **5 minutes**, loop through `ONLINE_PLAYERS`. For each:
+
+     1. `rcon_send "data get entity <player> Pos"`.
+     2. When you catch the response `"<player> has the following entity data: [X.0d, Y.0d, Z.0d]"`, compare `(X,Y,Z)` to the previous `(X0,Y0,Z0)` in `last_move.json`.
+     3. If identical (or distance < 0.1 blocks), and `now - last_move_time > AFK_THRESHOLD` (say, 20 minutes), issue:
+
+        ```
+        rcon_send "kick <player> Kicked for inactivity."
+        ```
+     4. Otherwise, update `last_move.json[player] = { coords: [X,Y,Z], ts: now }`.
+
+2. **Opt-Out / Whitelist**
+
+   * If a player has a metadata flag in `AFK_EXEMPT.json[player]=true`, skip them (e.g. admins or players on long builds).
+
+---
+
+## 13. Boss Battles / Mob Arena (Coordinated Spawns)
+
+**Goal**: Periodically spawn a custom “boss” (Ender Dragon in the overworld?) or create a small arena where mobs spawn for players to fight.
+**How to implement**:
+
+1. **Command syntax**
+
+   * `/server boss start` (L1 only) →
+
+     1. Teleport all online players to a designated arena coordinate:
+
+        ```
+        for p in "${ONLINE_PLAYERS[@]}"; do
+          rcon_send "tp $p 500 70 500"
+        done
+        ```
+     2. Set up the playing field (e.g. `rcon_send "fill 490 64 490 510 80 510 minecraft:air replace"`).
+     3. Spawn X mobs in waves with sleep intervals:
+
+        ```bash
+        for i in {1..5}; do
+          rcon_send "summon zombie 500 65 500"
+          rcon_send "summon skeleton 502 65 502"
+          sleep 10
+        done
+        ```
+     4. At the end, `rcon_send "say Boss battle over! Claim your rewards."` and teleport everyone back to spawn or their bed.
+
+2. **Rewards**
+
+   * Drop a chest automatically:
+
+     ```bash
+     rcon_send "setblock 500 65 505 minecraft:chest"
+     rcon_send "data merge block 500 65 505 {Items:[{id:\"minecraft:diamond\",Count:5b,Slot:0}]}"
+     ```
+   * Or `give` players items directly.
+
+---
+
+## 14. Scheduled Restarts, Automatic Backups, and Lag Alerts
+
+**Goal**: Although you already have backup and crash‐restart logic, you can also schedule “daily restarts” to free memory or automatically restart if TPS drops.
+**How to implement**:
+
+1. **Daily Restart**
+
+   * In your wrapper’s main loop, every minute check if the current local time matches a config value (e.g. “04:00”). If so, do:
+
+     ```bash
+     log "Scheduled daily restart (04:00 AM)."
+     # 1. Warn players in chat for 1 minute:
+     for i in {60..1}; do
+       rcon_send "say ❗ Server will restart in $i seconds."
+       sleep 5
+     done
+     # 2. gracefully shut down:
+     shutdown_sequence
+     ```
+   * Because `shutdown_sequence` calls `exit 0`, your wrapper will finish. (If you want it to loop again after a restart, wrap `shutdown_sequence` to set a flag rather than exit, then at the end of the wrap‐around `while true` do a `break` or a manual `/start`.)
+
+2. **TPS/Lag Alert**
+
+   * Unfortunately, vanilla server logs send TPS only when you run `/tps`, but you can automate that:
+
+     * Every **5 minutes**, run `rcon_send "tps"`.
+     * Catch the next server line that looks like `[Server thread/INFO]: TPS from last 1m, 5m, 15m: 19.8, 19.9, 19.9` via a regex in `process_output()`.
+     * Parse the “1m” TPS; if it’s < 17, do:
+
+       ```
+       rcon_send "say ⚠️ Warning: TPS is low ($tps). Server might lag."
+       ```
+     * If it gets below 10, run a full backup + restart to try to recover performance.
+
+---
+
+## 15. Custom “Fun” Commands & Easter Eggs
+
+**Goal**: Keep your server lively with one‐off “fun” commands beyond `/ping`, `/joke`, `/haiku`. Below are some playful ideas:
+
+1. **/roll <sides>** → Random number from 1 to `<sides>`.
+
+   ```bash
+   if [[ $cmd =~ ^roll\ ([0-9]+)$ ]]; then
+     sides=${BASH_REMATCH[1]}
+     result=$(( RANDOM % sides + 1 ))
+     rcon_send "say $user rolled a $result (1–$sides)."
+   fi
+   ```
+2. **/8ball <question>** → Replies with a random answer from a small array of “yes/no/maybe” strings.
+3. **/gmcheck** → Prints the server’s current op list, whitelist status, and gamerule settings. Use:
+
+   ```bash
+   rcon_send "whitelist list"
+   rcon_send "op list"
+   rcon_send "gamerule doDaylightCycle"
+   rcon_send "gamerule doMobSpawning"
+   ```
+4. **/fortune\_cookie** → Displays a random “fortune” from a local text file (e.g. `fortunes.txt`) you keep on disk.
+5. **/spawnfireworks** → Runs a small loop to `/summon firework_rocket ~ ~1 ~ {Flight:1,Fireworks:{Explosions:[{Type:0,Colors:[I;11743532],FadeColors:[I;14602026]}]}}` around the player’s position five times.
+6. **/weather roll** → Randomly sets weather to clear/rain/thunder with equal probability. Perfect for “Who wants a thunderstorm?”
+
+---
+
+## 16. Built-In Vanilla Scoreboards & Mini-Games
+
+**Goal**: Use Minecraft’s native `/scoreboard` to build simple minigames (e.g., “hide and seek” in chat).
+**How to implement**:
+
+1. **Team Setup for Hide & Seek**
+
+   * `/server hiders` →
+
+     ```bash
+     rcon_send "scoreboard teams add hiders Hidden"
+     rcon_send "scoreboard teams join hiders $player"
+     rcon_send "say $player is now a hider. Prep time: 30 seconds!"
+     ```
+   * `/server seekers` →
+
+     ```bash
+     rcon_send "scoreboard teams add seekers Seeker"
+     rcon_send "scoreboard teams join seekers $player"
+     rcon_send "say $player is now a seeker!"
+     ```
+   * After all hiders have hidden, you run:
+
+     ```bash
+     rcon_send "scoreboard teams option hiders friendlyFire false"
+     rcon_send "tp @a[team=seekers] X Y Z"  # teleport all seekers to start
+     rcon_send "time set day"
+     rcon_send "gameMode adventure @a[team=seekers]"
+     ```
+   * Then seekers go find them. Whenever a seeker approaches within 2 blocks, you detect that by periodically checking distances and awarding a point:
+
+     ```bash
+     for seeker in "${SEEKERS[@]}"; do
+       for hider in "${HIDERS[@]}"; do
+         # use /execute if possible or data get entity to check coordinates
+         # If distance < 2 => “found” → move them to “seekers” team.
+       done
+     done
+     ```
+   * First team to find all hiders “wins” → reset teams.
+
+2. **One-on-One Spleef**
+
+   * /server spleef <player2> → Teleport both players onto a platform of snow, clear beneath them, and watch them dig. When someone falls, detection can be done by checking Y coordinate < X. (More effort, but doable with coordinate polling.)
+
+---
+
+## 17. “Player Stats” / Scoreboard Tracking
+
+**Goal**: Let anyone type `/server stats <player>` and see how many blocks they’ve mined, deaths, playtime, etc., using vanilla `/scoreboard objectives`.
+**How to implement**:
+
+1. **Initialize Scoreboards on Server Start**
+   In your `while true` loop, right after “Starting server…”, do:
+
+   ```bash
+   # these only create the objective if it doesn’t exist
+   rcon_send "scoreboard objectives add blocksMined minecraft.mined:minecraft.diamond_ore"
+   rcon_send "scoreboard objectives add deaths deathCount"
+   rcon_send "scoreboard objectives add playTime minecraft.custom:minecraft.play_one_minute"
+   ```
+
+   (You can track any statistic that the game itself natively tracks.)
+
+2. **Command syntax**
+
+   * `/server stats <player>` →
+
+     1. Run `rcon_send "scoreboard players get <player> blocksMined"` (and similarly for `deaths`, `playTime`).
+     2. When you catch lines like `<player> has <number> points`, parse those and send a composed message:
+
+        ```
+        rcon_send "tell $sender $player has mined <count> diamonds, died <deaths> times, and played <formatted hours> hours."
+        ```
+   * You may need to convert `playTime` from ticks to hours (divide by 20 ticks \* 60 seconds \* 60 minutes, etc.). Your wrapper can do that math in bash.
+
+---
+
+## 18. “Server Info” Dashboard in Chat
+
+**Goal**: On demand, let players get a quick summary:
+
+* Uptime (via your `get_uptime`),
+* TPS (if you’ve polled earlier),
+* Online player count + list of players,
+* Memory usage,
+* Next scheduled event.
+  **How to implement**:
+
+1. **Command syntax**
+
+   * `/server info` → In your wrapper, gather:
+
+     ```bash
+     uptime=$(get_uptime)
+     cpu=$(get_cpu)
+     ram=$(get_ram)
+     io=$(get_io)
+     net=$(get_net)
+     tps=$(last_tps_value)   # from your periodic “tps” checks
+     players=$(wc -w <<< "${ONLINE_PLAYERS[*]}")
+     player_list="${ONLINE_PLAYERS[*]}"
+     next_event=$(cat announcements.json | jq '.[] | select(.time >= now) | .time' | head -n1)
+     ```
+   * Then send back multiple `tell` commands:
+
+     ```
+     rcon_send "tell $player Server Uptime: $uptime"
+     rcon_send "tell $player CPU: $cpu  RAM: $ram"
+     rcon_send "tell $player TPS: $tps  Online: $players [$player_list]"
+     rcon_send "tell $player Next Event: $next_event"
+     ```
+
+---
+
+## 19. “Server Poll” / Vote System
+
+**Goal**: Let players call a quick vote (e.g. “Should we switch to hard mode?”) and have everyone type yes/no in chat.
+**How to implement**:
+
+1. **Command syntax**
+
+   * `/server poll start <question> <duration-seconds>` → If `lvl ≤ 2`, begin a poll:
+
+     * Clear any existing `poll.json`.
+     * `poll.json` has fields:
+
+       ```json
+       {
+         "question": "Switch to Hard Mode?",
+         "yes": [],
+         "no": [],
+         "expires": <timestamp>,
+         "initiator": "jeb_"
+       }
+       ```
+     * Broadcast: `rcon_send "say Poll started by $initiator: $question. Type /server poll vote yes or /server poll vote no."`
+     * Sleep for `<duration>` in a background process, then automatically call `/server poll end`.
+
+2. **Voting**
+
+   * `/server poll vote yes` or `/server poll vote no` →
+
+     1. Check if `now < expires`.
+     2. If yes, append `$player` to either `poll.json.yes` or `poll.json.no`, as long as they haven’t voted already (check both lists).
+     3. `rcon_send "tell $player Your vote is recorded."`
+     4. If `now ≥ expires`, “Poll is already closed.”
+
+3. **Ending the Poll**
+
+   * When `<duration>` is up (the sleep finishes), or an admin forcibly does `/server poll end`:
+
+     1. Count `len(yes)` vs. `len(no)`.
+     2. Broadcast:
+
+        ```
+        rcon_send "say Poll ended. Yes: <#> | No: <#>."
+        ```
+     3. Optionally run a command based on result: e.g.
+
+        ```bash
+        if (( len_yes > len_no )); then
+          rcon_send "say Poll passed—switching to Hard Mode."
+          rcon_send "difficulty hard"
+        else
+          rcon_send "say Poll failed—remaining at current difficulty."
+        fi
+        ```
+     4. Clear `poll.json` so no stale data remains.
+
+---
+
+## 20. “Server Encyclopedia” / Info Commands
+
+**Goal**: Let players look up quick reference info in‐game. For example,
+
+* `/server enchinfo <enchantment>` → Returns the max‐level and brief description of any enchantment.
+* `/server id <itemname>` → Returns the numeric/block ID or data value.
+* `/server coordhelp` → Explains coordinate syntax (`~`, `^`, etc.).
+  **How to implement**:
+
+1. **Data storage**
+
+   * A local `reference.json` file with a structure like:
+
+     ```json
+     {
+       "enchantments": {
+         "sharpness": { "max_level": 5, "desc": "Increases melee damage by 1.25 per level." },
+         "unbreaking": { "max_level": 3, "desc": "Increases item durability." }
+       },
+       "items": {
+         "stone": { "id": "minecraft:stone", "numeric": 1 },
+         "wooden_sword": { "id": "minecraft:wooden_sword", "numeric": 267 }
+       }
+     }
+     ```
+
+2. **Command syntax**
+
+   * `/server enchinfo <name>` →
+
+     1. Look up `reference.json.enchantments[name]`.
+     2. If found, `rcon_send "tell $player <Enchantment: $name — Max: $max> | $desc."`
+     3. Else “Unknown enchantment.”
+   * `/server id <name>` → Similar lookup in `reference.json.items`.
+   * `/server coordhelp` → Just send a few fixed chat lines explaining `~` vs. `^` coordinates.
+
+---
+
+## 21. Time/Gamemode Automations
+
+**Goal**: Automatically change the world’s time or difficulty on a schedule, or let players vote to switch gamemodes temporarily.
+**How to implement**:
+
+1. **Schedule Day/Night Cycle**
+
+   * In your main loop, at local 06:00 AM, run `rcon_send "time set day"`, at 18:00 run `rcon_send "time set night"`, and broadcast a short message.
+   * Only if a config flag `AUTOTIME=true`.
+
+2. **Temporary Gamemode**
+
+   * `/server gmfreeze <player>` → Puts someone in survival + slows them (via `/effect give <player> slowness 9999 255 true`).
+   * `/server gmsurvive <player>` → Removes slowness, returns them to survival.
+   * `/server gmadventure <player>` → `/gamemode adventure` plus freeze.
+   * Good for a “timeout” if someone is misbehaving.
+
+---
+
+## 22. “Rulebook” and Help System
+
+**Goal**: Store server rules, map them to chat commands, and make them searchable in-game.
+**How to implement**:
+
+1. **Data storage**
+
+   * `rules.json`:
+
+     ```json
+     {
+       "no_griefing": "Griefing is strictly prohibited. Any player found destroying others’ builds will be banned without warning.",
+       "no_xray": "Using any X-ray or view‐through‐walls mod is not allowed.",
+       "no_pvp_before_7pm": "PVP is only allowed after 7pm server time on weekends."
+     }
+     ```
+
+2. **Command syntax**
+
+   * `/server rules` → Lists all keys from `rules.json` with a brief summary:
+
+     ```
+     rcon_send "tell $player 1. no_griefing: $text"
+     rcon_send "tell $player 2. no_xray: $text"
+     … 
+     ```
+   * `/server rule <keyword>` → Shows only that rule’s text.
+   * This way, players never have to venture off‐server to read your full rulebook.
+
+---
+
+### A Note on “No Plugins” and Vanilla Limitations
+
+* **Vanilla server JAR** from Mojang (e.g. `server.jar`) does **not** support Bukkit/Spigot plugins. If you ever want third-party plugin APIs (Vault, Essentials, WorldGuard, grief prevention, custom commands, economy plugins, etc.), you must switch to a fork such as [PaperMC](https://papermc.io/) or [Spigot](https://www.spigotmc.org/).
+
+  * However, everything above can be done in a pure vanilla environment by reading chat output + using RCON.
+  * The only things you **cannot** do in strict vanilla are:
+
+    1. Hook directly into block‐break or right‐click events without polling.
+    2. Modify core game logic (you can only run `/give`, `/tp`, `/scoreboard`, etc.).
+    3. Install pre‐compiled “plugin jars” into `plugins/`—that directory doesn’t even exist in pure Mojang server.
+
+* In short, your wrapper **is** effectively acting like a “poor‐man’s plugin engine.” As long as you can match regexes on chat output and issue RCON commands, you can remake most of the common plugin functionality (homes, warps, kit, economy) yourself.
+
+---
+
+## Putting It All Together
+
+1. **Decide on a data storage format** (JSON is easiest if you have `jq` installed; otherwise plain text or CSV pairs).
+2. **Add new sections within `process_output()`** that detect your new custom chat triggers (`/server sethome`, `/server balance`, `/server tpa`, etc.).
+3. **Create small helper functions** in your script for:
+
+   * Reading/writing JSON files (`save_json()`, `load_json()`),
+   * Managing in-memory arrays like `ONLINE_PLAYERS`,
+   * Periodic checks (use a background loop in the wrapper for polls, TPS checks, daily resets, etc.).
+4. **Never remove or rename existing variables**—simply append extra `elif` or `case` blocks under “CHAT PARSE” so nothing breaks.
+5. **Test thoroughly** on a separate world (or use a backup) before pushing to your production survival server.
+
+---
+
+### Example: Implementing `/server sethome home1`
+
+Below is a minimal snippet showing how to integrate “sethome” into your existing structure. This assumes you have `jq`, but you could also use `sed`.
+
+```bash
+# In your wrapper’s global scope:
+HOMES_JSON=./homes.json
+if [[ ! -f "$HOMES_JSON" ]]; then
+  echo "{}" > "$HOMES_JSON"
+  log "Created $HOMES_JSON"
+fi
+
+# Helper functions to read/write JSON (using jq)
+load_homes(){
+  jq -r '.' "$HOMES_JSON"
+}
+save_homes(){
+  echo "$1" | jq '.' > "$HOMES_JSON.tmp" && mv "$HOMES_JSON.tmp" "$HOMES_JSON"
+}
+
+# In process_output(), under the “# ─ CHAT PARSE” block, after you compute `user` and `cmd` and `lvl`:
+if [[ $cmd =~ ^sethome[[:space:]]+([a-zA-Z0-9_-]+)$ ]]; then
+  name="${BASH_REMATCH[1]}"
+  # Only if the player hasn’t exceeded max homes (example: 3)
+  current_homes=$( jq -r --arg p "$user" '.[$p] | keys | length // 0' "$HOMES_JSON" )
+  if (( current_homes >= 3 )); then
+    rcon_send "tell $user You already have 3 homes (max). Delete one first."
+    continue
+  fi
+  # Record a temporary “sethome request”
+  SETHOME_REQ="$user:$name"
+  rcon_send "data get entity $user Pos"
+  continue
+fi
+
+# Later in process_output(), your “Add-spot coords” block catches a line like:
+#   Notch has the following entity data: [100.0d,64.0d,200.0d]
+# We can repurpose that section for sethome:
+if [[ -n $SETHOME_REQ && $line =~ has\ the\ following\ entity\ data:\ \[([^\]]+)\] ]]; then
+  raw="${BASH_REMATCH[1]}"    # e.g. "100.0d, 64.0d, 200.0d"
+  coords=$(echo "$raw" | sed -E 's/[dD]//g; s/,//g')  # "100.0 64.0 200.0"
+  IFS=':' read -r who home_name <<< "$SETHOME_REQ"
+  # Load existing homes object:
+  homes_json=$(load_homes)
+  # Add or update this home:
+  updated=$( echo "$homes_json" \
+    | jq --arg p "$who" --arg hn "$home_name" --arg cs "$coords" \
+         '.[$p] += {($hn): $cs}' )
+  save_homes "$updated"
+  rcon_send "say $who: Home '$home_name' set to $coords"
+  log "Set home '$home_name' for $who → $coords"
+  SETHOME_REQ=""
+  continue
+fi
+
+# For /server home name:
+if [[ $cmd =~ ^home[[:space:]]+([a-zA-Z0-9_-]+)$ ]]; then
+  name="${BASH_REMATCH[1]}"
+  # Get that coordinate:
+  cs=$(jq -r --arg p "$user" --arg hn "$name" '.[$p][$hn] // empty' "$HOMES_JSON")
+  if [[ -z $cs ]]; then
+    rcon_send "say $user: No home named '$name'."
+  else
+    rcon_send "say Teleporting $user to '$name' → $cs"
+    # Coordinates are “100.0 64.0 200.0”
+    rcon_send "tp $user $cs"
+  fi
+  continue
+fi
+
+# For /server delhome name:
+if [[ $cmd =~ ^delhome[[:space:]]+([a-zA-Z0-9_-]+)$ ]]; then
+  name="${BASH_REMATCH[1]}"
+  has_key=$(jq -r --arg p "$user" --arg hn "$name" 'has($p) and .[$p] | has($hn)' "$HOMES_JSON")
+  if [[ "$has_key" != "true" ]]; then
+    rcon_send "say $user: No home named '$name'."
+  else
+    updated=$( echo "$(load_homes)" \
+      | jq --arg p "$user" --arg hn "$name" 'del(.[$p][$hn])' )
+    save_homes "$updated"
+    rcon_send "say $user: Deleted home '$name'."
+  fi
+  continue
+fi
+```
+
+That snippet shows how simple it is to tack on new features without touching any of your existing sections. You just:
+
+1. Check if the chat message matches your new command.
+2. Do whatever file I/O is needed.
+3. Issue the appropriate RCON commands.
+4. Use `continue` so the existing code never gets skipped or broken.
+
+---
+
+### Final Thoughts
+
+* **No plugin required**: Your “minecraft.jar” from Mojang is 100 % vanilla, so any “plugin”‐like behavior must come from chat parsing + RCON. The ideas above stay within that envelope.
+* **Start small**: Pick one or two features (e.g. homes + warp), get them stable, then layer on economy, kits, polls, etc.
+* **Test in a sandbox world**: Always copy your script and run it against a fresh test world so you don’t accidentally wipe people’s data.
+* **Watch performance**: Don’t poll too aggressively (e.g. TPS or Pos checks every minute is OK; every second will overload both your wrapper and the server).
+* **Back up Config Files**: As you add more JSON files (homes.json, economy.json, etc.), keep them in the same `./backups` scheme so nothing is lost.
+
+With these patterns, you can replicate almost every core plugin feature—homes, warps, economy, mail, polls, kits, mutes—using only your existing wrapper logic. From there, your only limitation is imagination (and how many JSON files you can maintain before it gets unwieldy). Have fun expanding it!
+

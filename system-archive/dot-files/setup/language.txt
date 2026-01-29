@@ -1,0 +1,10 @@
+python,python3
+C
+cpp,c++
+java
+javascript
+assembly,asm
+rust
+go
+ruby
+bash

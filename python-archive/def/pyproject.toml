@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "def"
+version = "1.0.0"
+description = "Offline terminal dictionary"
+readme = "README.md"
+license = { file = "LICENSE.txt" }
+
+[project.scripts]
+def = "dictionary:main"

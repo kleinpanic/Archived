@@ -1,0 +1,34 @@
+project-root/
+├── README.md               # Project overview and documentation
+├── LICENSE                 # License file
+├── docs/                   # Additional documentation (architecture, API, design)
+│   ├── architecture.md     
+│   ├── api_spec.md         
+│   └── design_notes.md     
+├── frontend/               # Frontend source code (HTML/JS/CSS)
+│   ├── public/             # Static files served directly (HTML, CSS, client JS)
+│   │   ├── index.html      # Landing or login page
+│   │   ├── portal.html     # Member portal page
+│   │   ├── styles.css      # Global CSS
+│   │   └── assets/         # Images, fonts, icons
+│   └── src/                # Optional: additional JS modules or frameworks
+├── backend/                # Backend source code in C
+│   ├── src/                # C source files
+│   │   ├── main.c          # Main server application
+│   │   ├── auth.c          # Authentication handlers
+│   │   ├── api.c           # API endpoints (login, events, documents, etc.)
+│   │   └── utils.c         # Utility functions (logging, helpers)
+│   ├── include/            # Header files
+│   │   ├── auth.h          
+│   │   ├── api.h           
+│   │   └── utils.h         
+│   ├── Makefile            # Build script for compiling the backend
+│   └── tests/              # Unit and integration tests for backend
+│       └── test_api.c      
+├── container/              # Containerization and deployment files
+│   ├── Dockerfile          # Dockerfile for containerizing the app
+│   └── docker-compose.yml  # Compose file for multi-container setups (if needed)
+└── scripts/                # Utility scripts (setup, backup, deployment)
+    ├── backup.sh           # Script for backups (e.g., SQLite database, logs)
+    └── deploy.sh           # Deployment automation script
+

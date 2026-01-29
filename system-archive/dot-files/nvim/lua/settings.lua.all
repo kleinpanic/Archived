@@ -1,0 +1,118 @@
+-- SETTINGS.LUA: Comprehensive Neovim Configuration
+
+-- Enable line numbers
+vim.o.number = true -- Show absolute line numbers
+vim.o.relativenumber = true -- Show relative line numbers (useful for jump motions)
+
+-- Cursor behavior
+vim.o.cursorline = true -- Highlight the line where the cursor is
+vim.o.cursorcolumn = true -- Highlight the column where the cursor is
+vim.o.scrolloff = 8 -- Keep 8 lines visible above/below the cursor
+vim.o.sidescrolloff = 8 -- Keep 8 columns visible to the left/right of the cursor
+
+-- UI customization
+vim.o.termguicolors = true -- Enable 24-bit RGB color in the terminal
+vim.o.signcolumn = "yes" -- Always show the sign column (useful for LSP, Git)
+vim.o.colorcolumn = "80" -- Highlight the 80th column (good for coding style guides)
+vim.o.laststatus = 3 -- Global status line (shared between windows)
+vim.o.showmode = false -- Disable the default mode display (e.g., -- INSERT --)
+vim.o.wrap = false -- Disable line wrapping (horizontal scrolling for long lines)
+vim.o.showcmd = true -- Display incomplete commands at the bottom
+vim.o.ruler = true -- Show the cursor position at the bottom right
+
+-- Tabs and indentation
+vim.o.tabstop = 4 -- Number of spaces for a tab
+vim.o.shiftwidth = 4 -- Number of spaces for indentation
+vim.o.softtabstop = 4 -- Treat <Tab> as 4 spaces while editing
+vim.o.expandtab = true -- Convert tabs to spaces
+vim.o.autoindent = true -- Copy indentation from the previous line
+vim.o.smartindent = true -- Automatically add extra indentation for new lines
+
+-- Search settings
+vim.o.ignorecase = true -- Ignore case when searching
+vim.o.smartcase = true -- Override ignorecase if the search query contains uppercase
+vim.o.incsearch = true -- Show incremental search results as you type
+vim.o.hlsearch = true -- Highlight all matches from the search
+vim.o.wildmenu = true -- Show a menu for command-line tab completion
+
+-- File handling
+vim.o.undofile = true -- Enable persistent undo (saves undo history in a file)
+vim.o.swapfile = false -- Disable swap files (reduces disk writes)
+vim.o.backup = false -- Disable file backups
+vim.o.writebackup = false -- Disable backup before overwriting a file
+vim.o.autoread = true -- Automatically reload files changed outside of Neovim
+vim.o.hidden = true -- Allow switching buffers without saving
+
+-- Split behavior
+vim.o.splitright = true -- Open vertical splits to the right
+vim.o.splitbelow = true -- Open horizontal splits below
+vim.o.equalalways = false -- Prevent automatic resizing of splits
+
+-- Clipboard
+vim.o.clipboard = "unnamedplus" -- Use the system clipboard for all operations
+
+-- Performance
+vim.o.lazyredraw = true -- Redraw only when needed (improves performance)
+vim.o.updatetime = 300 -- Time (ms) to trigger CursorHold events (lower = faster)
+vim.o.timeoutlen = 500 -- Time (ms) to wait for a key sequence to complete
+
+-- Completion
+vim.o.completeopt = "menu,menuone,noselect" -- Customize the completion menu
+vim.o.pumheight = 10 -- Limit the number of items in the popup menu
+
+-- Folding
+vim.o.foldmethod = "indent" -- Fold based on indentation levels
+vim.o.foldlevel = 99 -- Start unfolded
+vim.o.foldenable = true -- Enable folding by default
+
+-- Backup directory (if enabled)
+vim.o.backupdir = vim.fn.stdpath("data") .. "/backup//" -- Store backups in a custom directory
+
+-- Mouse support
+vim.o.mouse = "a" -- Enable mouse in all modes
+
+-- Command-line
+vim.o.cmdheight = 1 -- Height of the command-line area
+vim.o.shortmess = vim.o.shortmess .. "c" -- Avoid showing extra messages during completion
+
+-- Spell checking
+vim.o.spell = false -- Disable spell checking by default
+vim.o.spelllang = "en" -- Set spell check language to English
+
+-- Wildmenu (command-line completion)
+vim.o.wildignore = "*.o,*.obj,*.bak,*.exe,*.pyc,*.class" -- Ignore specific file types during file navigation
+vim.o.wildmode = "longest:full,full" -- Customize command-line completion behavior
+
+-- Terminal integration
+vim.o.shell = "bash" -- Set the default shell
+vim.o.shellcmdflag = "-c" -- Set shell command flag
+
+-- Key mappings display
+vim.o.showcmdloc = "statusline" -- Display key mappings in the status line
+
+-- Diagnostics (LSP)
+vim.diagnostic.config({
+    virtual_text = true, -- Show diagnostics as virtual text
+    signs = true, -- Show signs in the sign column
+    underline = true, -- Underline problematic code
+    update_in_insert = false, -- Don't update diagnostics while typing
+})
+
+-- Performance optimizations for large files
+vim.cmd([[
+  augroup LargeFiles
+    autocmd!
+    autocmd BufReadPre * if getfsize(expand("<afile>")) > 1048576 | setlocal syntax=off | endif
+  augroup END
+]])
+
+-- Custom filetype settings
+vim.cmd([[
+  augroup FileTypeSpecific
+    autocmd!
+    autocmd FileType markdown setlocal wrap spell
+    autocmd FileType python setlocal expandtab shiftwidth=4 tabstop=4
+    autocmd FileType go setlocal noexpandtab tabstop=8 shiftwidth=8
+  augroup END
+]])
+

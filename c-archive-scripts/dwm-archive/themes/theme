@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+
+BASE=~/DynamicWindowManagement/KleinDwm/source
+CONFIG_FILE="$BASE/config.h"
+COLORS_DIR="$BASE/colors"
+ALACRITTY_CONFIG_DIR=~/.config/alacritty
+PICOM_CONFIG_DIR=~/.config/picom
+BACKGROUND_DIR=~/Pictures/backgrounds
+XINITRC=~/.xinitrc
+
+replace_include_line() {
+    local theme="$1"
+    local include_line="#include \"colors/$theme.h\""
+    sed -i "s|#include \"colors/.*\"|$include_line|" "$CONFIG_FILE"
+    echo "Theme changed to $theme"
+}
+
+update_configs() {
+    local theme="$1"
+    
+    # Update Alacritty config
+    local alacritty_config="$ALACRITTY_CONFIG_DIR/$theme.alacritty.yml"
+    if [ -f "$alacritty_config" ]; then
+        cp "$alacritty_config" "$ALACRITTY_CONFIG_DIR/alacritty.yml"
+        echo "Updated Alacritty config to $alacritty_config"
+    else
+        echo "Alacritty config for theme $theme not found."
+    fi
+    
+    # Update Picom config
+    local picom_config="$PICOM_CONFIG_DIR/$theme.picom.conf"
+    if [ -f "$picom_config" ]; then
+        cp "$picom_config" "$PICOM_CONFIG_DIR/picom.conf"
+        echo "Updated Picom config to $picom_config"
+    else
+        echo "Picom config for theme $theme not found."
+    fi
+}
+
+update_background() {
+    local theme="$1"
+    local background="$BACKGROUND_DIR/$theme.jpg"
+    
+    if [ -f "$background" ]; then
+        # Change the background using feh
+        feh --bg-scale "$background"
+        echo "Background changed to $background"
+        
+        # Update .xinitrc
+        sed -i "s|^feh --bg-scale .*|feh --bg-scale '$background'|" "$XINITRC"
+        echo ".xinitrc updated with new background path"
+    else
+        echo "Background image for theme $theme not found."
+    fi
+}
+
+list_themes() {
+    echo "Available themes:"
+    for file in "$COLORS_DIR"/*.h; do
+        theme=$(basename "$file" .h)
+        echo "  $theme"
+    done
+}
+
+if [ -z "$1" ]; then
+    list_themes
+    echo "Usage: themes <theme>"
+    exit 1
+fi
+
+THEME_NAME=$(basename "$1" .h)
+
+if [ -f "$COLORS_DIR/$THEME_NAME.h" ]; then 
+    replace_include_line "$THEME_NAME"
+    update_configs "$THEME_NAME"
+    update_background "$THEME_NAME"
+else
+    echo "Theme $THEME_NAME not found in $COLORS_DIR ya goddamn idiot"
+    exit 1
+fi
+
+read -p "Do you wanna restart X server to apply changes? (Y/n): " confirm
+if [[ "$confirm" =~ ^[Nn]$ ]]; then 
+    echo "Changes Applied. Restart X server manually to see the changes."
+else
+    echo "Restarting X server"
+    pkill -HUP dwm 
+    # killall dwm
+fi

@@ -1,0 +1,16 @@
+certifi==2024.8.30
+charset-normalizer==3.3.2
+idna==3.9
+linkify-it-py==2.0.3
+markdown-it-py==3.0.0
+mdit-py-plugins==0.4.2
+mdurl==0.1.2
+platformdirs==4.3.3
+psutil==6.0.0
+Pygments==2.18.0
+requests==2.32.3
+rich==13.8.1
+textual==0.79.1
+typing_extensions==4.12.2
+uc-micro-py==1.0.3
+urllib3==2.2.3

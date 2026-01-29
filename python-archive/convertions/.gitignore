@@ -1,0 +1,6 @@
+venv/
+sample_tests/
+backups/
+
+# Ignore Vosk model directory
+model

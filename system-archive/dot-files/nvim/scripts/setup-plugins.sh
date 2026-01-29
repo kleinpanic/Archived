@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+
+PREFIX="$HOME/.config/nvim/pack/nvim/start"
+mkdir -p "$PREFIX"
+
+git clone https://github.com/numToStr/Comment.nvim "$PREFIX/comment"
+git clone https://github.com/ellisonleao/gruvbox.nvim "$PREFIX/gruvbox"
+git clone https://github.com/nvim-lualine/lualine.nvim "$PREFIX/lualine"
+git clone https://github.com/vimwiki/vimwiki "$PREFIX/vimwiki"
+git clone https://github.com/lewis6991/gitsigns.nvim "$PREFIX/gitsigns"
+git clone https://github.com/hrsh7th/nvim-cmp "$PREFIX/nvim-cmp"
+git clone https://github.com/hrsh7th/cmp-nvim-lsp "$PREFIX/cmp-nvim-lsp"
+git clone https://github.com/hrsh7th/cmp-buffer "$PREFIX/cmp-bufffer"
+git clone https://github.com/hrsh7th/cmp-path "$PREFIX/cmp-path"
+git clone https://github.com/hrsh7th/cmp-cmdline "$PREFIX/cmp-cmdline"
+git clone https://github.com/saadparwaiz1/cmp_luasnip "$PREFIX/cmp_luasnip"
+git clone https://github.com/L3MON4D3/LuaSnip "$PREFIX/luasnip"
+git clone https://github.com/nvim-treesitter/nvim-treesitter "$PREFIX/nvim-treesitter"
+git clone https://github.com/windwp/nvim-autopairs "$PREFIX/nvim-autopairs"
+git clone https://github.com/folke/which-key.nvim "$PREFIX/which-key"
+git clone https://github.com/nvim-tree/nvim-web-devicons "$PREFIX/nvim-web-devicons"
+git clone https://github.com/nvim-lua/plenary.nvim "$PREFIX/plenary"
+git clone https://github.com/nvim-treesitter/nvim-treesitter "$PREFIX/nvim-treesitter"
+git clone https://github.com/neovim/nvim-lspconfig "$PREFIX/nvim-lspconfig"  
+git clone https://github.com/iamcco/markdown-preview.nvim "$PREFIX/markdown-preview"
+git clone https://github.com/nvim-telescope/telescope.nvim "$PREFIX/telescope"
+git clone https://github.com/mfussenegger/nvim-lint "$PREFIX/nvim-lint" 
+sudo apt install ripgrep

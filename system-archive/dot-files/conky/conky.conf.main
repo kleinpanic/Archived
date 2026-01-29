@@ -1,0 +1,112 @@
+print("Loading config file...")
+
+conky.config = {
+
+    -- Conky Settings
+    background = true,
+    update_interval = 1.0,
+
+    cpu_avg_samples = 2,
+    net_avg_samples = 2,
+
+    double_buffer = true,
+    no_buffers = true,
+
+
+    -- Window
+    own_window = true,
+
+    own_window_class = 'Conky-Sysinfo',
+    own_window_title = 'Conky - System Info',
+    own_window_type = 'normal',
+
+    -- Remove "above" and replace it with "below" if you don't want the planel to be always visable
+    -- own_window_hints = 'below,skip_taskbar,skip_pager',
+
+    own_window_transparent = false,
+    own_window_argb_visual = true,
+    own_window_argb_value = 200,
+    own_window_colour = '#2b363b',      -- bluish-gray
+
+
+    -- Size and Placement
+    xinerama_head = 1,      -- Screan Placement
+
+    minimum_height = 5, 
+    maximum_width = 250,    -- Default is 250
+
+    alignment = 'top_left',
+
+    gap_x = 20,             -- Default is 20
+    gap_y = 20,             -- Default is 20
+
+    border_width = 5,
+
+    -- Graph settings
+    draw_borders = false,
+    draw_graph_borders = true,
+    draw_outline = false,
+    draw_shades = false,
+
+    out_to_console = false,
+    out_to_ncurses = false,
+    out_to_stderr = false,
+    out_to_x = true,
+
+
+    -- Text
+    use_xft = true,
+    uppercase = false,
+    font = 'CodeNewRoman Nerd Font Mono:size=12',
+
+    default_color = 'purple',
+
+    use_spacer = 'none',
+
+}
+
+conky.text = [[
+${color grey}Info:$color ${scroll 32 Conky $conky_version - $sysname $nodename $kernel $machine}
+$hr
+${color grey}Date:${alignr}${color} ${time %d-%m-%Y}
+${color grey}Time:${alignr}${color} ${time %T}
+${voffset -13}
+${color grey}Uptime:${alignr}${color} $uptime
+${voffset -13}
+${color orange}CPU ${hr}
+${color grey}Frequency:${alignr}${color} $freq Mhz
+${color grey}Temp:${alignr}${color} ${acpitemp}°c
+${color grey}Usage:${color} ${cpu}% ${goto 115}${cpubar}
+${color grey}${cpugraph 00FF00 FF0000 -t}
+
+${color orange}GPU ${hr}
+${color grey}Frequency: ${alignr}${color} ${execi 10 cat /sys/class/drm/card0/gt_act_freq_mhz} MHz
+${color grey}Temp: ${alignr}${color} ${execi 10 sensors | grep 'Package id 0:' | awk '{print $4}'}°C
+${color grey}Usage: ${alignr}${color} ${execpi 1 /home/klein/.config/conky/get_gpu_usage.sh}%
+${execgraph /home/klein/.config/conky/get_gpu_usage.sh 00ff00 ff0000 -t}
+
+
+${color orange}File System ${hr}
+${color}/home ${alignr}${color}${fs_used /home}/${fs_size /home}
+${fs_used_perc /home}% ${goto 45}${fs_bar /home}
+${voffset -13}
+${color orange}Memory ${hr}
+${color}Ram${alignr}${color} $mem/$memmax
+${color}$memperc% ${goto 45}${membar}
+${voffset -13}
+${color}Swap${alignr}${color} $swap/$swapmax
+${color}$swapperc% ${goto 45}${swapbar}
+${voffset -13}
+${color orange}Networking ${hr}
+${color grey}SSID: ${color}${wireless_essid wlp0s20f3}
+${color lightblue}${font FontAwesome} ${font}${color lightblue}${downspeed wlp0s20f3}/s${goto 136}${color lightgreen}${font FontAwesome} ${font}${color lightgreen}${upspeed wlp0s20f3}/s
+${color lightblue}${downspeedgraph wlp0s20f3 45,122 95ec8b FF0000 -t}${offset 6}${color lightgreen}${upspeedgraph wlp0s20f3 45,122 95ec8b FF0000 -t}
+${color orange}${hr}
+${color grey}Name
+${color lightgrey}${top name 1}${top mem 1}
+${color lightgrey}${top name 2}${top mem 2}
+${color lightgrey}${top name 3}${top mem 3}
+${color lightgrey}${top name 4}${top mem 4}
+]]
+
+

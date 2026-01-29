@@ -1,0 +1,13 @@
+[Unit]
+Description=Start systrays on X
+After=default.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/daemon_starter volumeicon
+Restart=on-failure
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/home/klein/.Xauthority
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,7 @@
+handle user input checking better
+handle depluralization and other synthetic word simplifications (nltk?)
+prevent duplicate definitions
+try lowercase of word before showing alternatives if case-specific entry not found
+documentation/refactor
+test class
+rewrite in C for speed

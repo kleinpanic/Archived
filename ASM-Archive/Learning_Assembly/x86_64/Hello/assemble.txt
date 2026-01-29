@@ -1,0 +1,2 @@
+nasm -f elf64 -o output.o input.asm
+ld input.o -o binary
